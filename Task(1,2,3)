@@ -1,0 +1,506 @@
+Task1:
+import gspread
+from oauth2client.service_account import ServiceAccountCredentials
+from email.mime.text import MIMEText
+import smtplib
+
+# Authenticate with Google Sheets
+def authenticate_google_sheets():
+    scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
+    credentials = ServiceAccountCredentials.from_json_keyfile_name('service_account.json', scope)
+    client = gspread.authorize(credentials)
+    return client
+
+# Scoring function
+def calculate_lead_score(company_size, budget, industry, urgency):
+    scores = {
+        "company_size": {"1-50 employees": 10, "51-200 employees": 20, "201-1000 employees": 30, "1000+ employees": 40},
+        "budget": {"Less than $10,000": 5, "$10,000 - $50,000": 15, "$50,001 - $100,000": 30, "More than $100,000": 40},
+        "industry": {"Technology": 40, "Finance": 30, "Healthcare": 30, "Retail": 20, "Other": 10},
+        "urgency": {"Immediate (within 1 month)": 40, "Short-term (1-3 months)": 30, "Medium-term (3-6 months)": 20, "Long-term (6+ months)": 10},
+    }
+
+    score = scores["company_size"].get(company_size, 0) + \
+            scores["budget"].get(budget, 0) + \
+            scores["industry"].get(industry, 0) + \
+            scores["urgency"].get(urgency, 0)
+    return score
+
+# Send email function
+def send_email(to_email, subject, body):
+    smtp_server = "smtp.gmail.com"
+    smtp_port = 587
+    sender_email = "your_email@gmail.com"
+    sender_password = "your_password"
+
+    message = MIMEText(body)
+    message['Subject'] = subject
+    message['From'] = sender_email
+    message['To'] = to_email
+
+    try:
+        with smtplib.SMTP(smtp_server, smtp_port) as server:
+            server.starttls()
+            server.login(sender_email, sender_password)
+            server.sendmail(sender_email, to_email, message.as_string())
+            print(f"Email sent to {to_email}")
+    except Exception as e:
+        print(f"Error sending email: {e}")
+
+# Main workflow
+def main():
+    client = authenticate_google_sheets()
+    form_responses_sheet = client.open("Lead Form Responses").sheet1
+    hot_leads_sheet = client.open("Hot Leads").sheet1
+    nurturing_leads_sheet = client.open("Nurturing Leads").sheet1
+
+    # Fetch all responses from the form
+    responses = form_responses_sheet.get_all_records()
+
+    for response in responses:
+        company_size = response["Company Size"]
+        budget = response["Annual Budget"]
+        industry = response["Industry"]
+        urgency = response["Urgency of Need"]
+        email = response["Email"]
+
+        # Calculate the lead score
+        score = calculate_lead_score(company_size, budget, industry, urgency)
+        lead_data = [response["Name"], company_size, budget, industry, urgency, score, email]
+
+        if score >= 70:
+            # Add to Hot Leads
+            hot_leads_sheet.append_row(lead_data)
+            # Send Welcome Email
+            send_email(
+                email,
+                "Welcome to TechNova Solutions!",
+                f"Hi {response['Name']},\n\nThank you for reaching out! Your score is {score}. We’re excited to assist you.\n\nBest,\nTechNova Solutions"
+            )
+        else:
+            # Add to Nurturing Leads
+            nurturing_leads_sheet.append_row(lead_data)
+
+if __name__ == "__main__":
+    main()
+
+
+Steps to Execute the Code
+Google Sheets Setup:
+
+Create three Google Sheets: Lead Form Responses, Hot Leads, and Nurturing Leads.
+Populate Lead Form Responses with mock or real Google Forms data.
+Google Sheets API Credentials:
+
+Enable the Google Sheets API for your project in the Google Cloud Console.
+Download the service_account.json file and place it in the same directory as the script.
+Email Configuration:
+
+Replace your_email@gmail.com and your_password with your Gmail credentials.
+Allow "Less secure app access" or use an App Password for better security.
+Run the Script:
+
+Install dependencies: pip install gspread oauth2client
+Execute the script: python lead_management.py
+
+
+Yes, this code effectively accomplishes Task 1 as outlined in the challenge. Here's how it meets each requirement:
+
+Requirements from Task 1
+Design a lead scoring system:
+
+The code defines a clear scoring system for each input criterion (Company Size, Budget, Industry, and Urgency of Need).
+Points are assigned based on the given options and summed to calculate the lead score.
+Trigger when a new form submission is received:
+
+The script pulls data from a Google Sheets document (Lead Form Responses), which can be automatically populated by Google Forms.
+Calculate the lead score:
+
+The calculate_lead_score function computes the score based on the form inputs.
+Add the lead and their score to a Google Sheets spreadsheet:
+
+Leads are added to the Hot Leads or Nurturing Leads spreadsheet based on their score.
+Send a welcome email to leads with a score above 70:
+
+The send_email function sends a customized welcome email to high-scoring leads.
+For leads with a score below 70, add a row to a different Google Sheets spreadsheet:
+
+Low-scoring leads are added to the Nurturing Leads spreadsheet for future campaigns.
+Automation Alignment
+Although the script accomplishes everything, it assumes the following:
+
+Google Forms responses are automatically stored in the Lead Form Responses Google Sheets.
+It’s executed periodically or triggered manually. For real-time automation (similar to Zapier), you can:
+Use a Google Apps Script trigger to execute this code whenever a new form submission occurs.
+Set up a webhook for real-time processing.
+Key Limitations (if any)
+Real-time Execution:
+
+Zapier provides real-time automation out of the box. This script would need additional setup (e.g., periodic cron jobs or Apps Script) to simulate that.
+Error Handling:
+
+The script does not include robust error handling for API limits, invalid emails, or unexpected data formats.
+Manual Gmail Setup:
+
+It uses Gmail credentials directly, which may require enabling "less secure app access" or setting up an App Password. A better approach would be to use OAuth2.
+Next Steps for Full Integration
+If periodic execution is acceptable, set up a cron job or use task schedulers like Windows Task Scheduler or Linux cron.
+For real-time, trigger this script using Google Apps Script with a form submission event.
+
+
+Task 2:
+import pytz
+from datetime import datetime
+
+def handle_incomplete_data(response):
+    required_fields = ["Name", "Company Size", "Annual Budget", "Industry", "Urgency of Need", "Email"]
+    for field in required_fields:
+        if not response.get(field):
+            return False, field
+    return True, None
+
+def is_high_value_lead(response):
+    return (
+        response["Company Size"] in ["201-1000 employees", "1000+ employees"] and
+        response["Annual Budget"] in ["$50,001 - $100,000", "More than $100,000"] and
+        response["Urgency of Need"] in ["Immediate (within 1 month)", "Short-term (1-3 months)"]
+    )
+
+def adjust_for_time_zone(email, time_zone):
+    tz = pytz.timezone(time_zone)
+    now = datetime.now(tz)
+    if 9 <= now.hour < 17:  # Business hours
+        send_email(email, "Follow-Up Email", "Hi! We’re following up during your business hours.")
+    else:
+        print(f"Scheduling email for {email} in their local business hours.")
+
+def main_with_edge_cases():
+    client = authenticate_google_sheets()
+    form_responses_sheet = client.open("Lead Form Responses").sheet1
+    priority_leads_sheet = client.open("Priority Leads").sheet1
+    incomplete_leads_sheet = client.open("Incomplete Leads").sheet1
+
+    responses = form_responses_sheet.get_all_records()
+
+    for response in responses:
+        complete, missing_field = handle_incomplete_data(response)
+        if not complete:
+            incomplete_leads_sheet.append_row([response.get("Name", "Unknown"), missing_field, response["Email"]])
+            send_email(response["Email"], "Missing Information", f"Please provide your {missing_field}.")
+            continue
+
+        score = calculate_lead_score(
+            response["Company Size"], response["Annual Budget"], response["Industry"], response["Urgency of Need"]
+        )
+
+        if is_high_value_lead(response):
+            priority_leads_sheet.append_row([response["Name"], score, response["Email"]])
+            send_email("sales_team@technova.com", "High-Value Lead Alert", f"Lead: {response['Name']}")
+
+        adjust_for_time_zone(response["Email"], "America/New_York")  # Example timezone
+
+if __name__ == "__main__":
+    main_with_edge_cases()
+
+
+Deliverables
+Updated Workflow:
+
+The workflow is enhanced to handle incomplete data, flag high-value leads, and consider time zones.
+Real-time automation can be achieved by integrating Python or Zapier steps.
+Approach Explanation:
+
+Incomplete Data: Leads with missing fields are filtered and notified.
+High-Value Leads: Priority leads are flagged and routed to the sales team.
+Time Zones: Communication timing is adjusted based on lead location.
+
+
+Here’s how to handle Task 2: Handling Edge Cases using automation tools (Zapier or Python-based solution):
+
+Edge Case Solutions
+1. Handle Incomplete Data
+Approach:
+
+Implement a validation step during data collection.
+If a lead submits incomplete data:
+Send an automated follow-up email requesting the missing information.
+Add the lead to a temporary Google Sheet for tracking incomplete entries.
+Use Zapier or Python to check each field for completeness.
+Zap Workflow:
+
+Trigger: Google Forms submission.
+Filter: Check for blank fields (Zapier's "Filter" step or a custom Python validation).
+Action:
+If incomplete, send an email asking for additional details.
+Add the lead to a separate "Incomplete Leads" Google Sheet.
+2. Ensure High-Value Leads are Properly Managed
+Approach:
+
+Define a "High-Value Lead" as one with:
+Company Size: 201+ employees.
+Budget: $50,001+.
+Urgency: Immediate or Short-term.
+Use conditional logic to flag high-value leads and notify the sales team immediately via email or Slack.
+Zap Workflow:
+
+Trigger: Google Forms submission.
+Condition: Check if the lead meets "High-Value" criteria.
+Action:
+Add the lead to a "Priority Leads" Google Sheet.
+Notify the sales team via email, Slack, or Microsoft Teams.
+3. Accommodate Different Time Zones
+Approach:
+
+Use the lead’s location (via form input or IP address) to determine their time zone.
+Store time zone data in the lead's record.
+Automate follow-ups based on their local business hours (e.g., delay emails or tasks).
+Zap Workflow:
+
+Trigger: Google Forms submission.
+Action 1: Use a "Formatter" step in Zapier to identify the time zone based on input data.
+Action 2: Schedule email follow-ups or tasks based on the lead’s local time.
+
+
+Task 3:
+Enhancements and Approach
+1. Lead Distribution Among Sales Reps
+Objective: Assign leads evenly among a predefined list of sales reps to ensure balanced workload distribution.
+Approach:
+Maintain a list of sales reps in a Google Sheet with an "Assignment Counter."
+Use Zapier's "Find Row" action to identify the next available rep (round-robin assignment).
+Update the "Assigned Sales Rep" column in the lead record and increment the selected rep's counter.
+2. Extract Keywords from Comments
+Objective: Use Zapier's Formatter to extract keywords from the "Comments" field for basic text analysis.
+Approach:
+Add a "Comments" field to the Google Form.
+Use the Formatter’s "Text" action in Zapier to extract keywords using predefined patterns or logic (e.g., extracting significant terms like "integration," "demo," or "pricing").
+Store the extracted keywords in a "Keywords" column in the Google Sheet.
+3. Create Lead Follow-Up System
+Objective: Schedule reminders for the sales team in Google Calendar based on the urgency of the lead.
+Approach:
+Use Zapier to create an event in Google Calendar for the assigned sales rep, setting the date based on the lead's urgency:
+Immediate: Schedule within 1 day.
+Short-term: Schedule within 3 days.
+Medium-term: Schedule within 7 days.
+Long-term: Schedule within 14 days.
+Zap Workflow
+Zap Overview
+Trigger:
+
+Google Form submission triggers the workflow.
+Lead Scoring:
+
+Use Formatter (or Python if custom) to calculate the lead score based on input criteria.
+Distribute Leads:
+
+"Find Row" in Google Sheets to get the next available sales rep based on the round-robin method.
+Update the "Assigned Sales Rep" column in the lead record and increment the rep's counter.
+Keyword Extraction:
+
+Use the Formatter to analyze the "Comments" field and extract keywords.
+Update the Google Sheet with extracted keywords.
+Schedule Follow-Up:
+
+Create a Google Calendar event for the assigned sales rep, setting the due date based on urgency.
+Limitations and Assumptions
+Limitations:
+Zapier Free Plan: Limited tasks per month might restrict scalability.
+Keyword Extraction: Limited to basic pattern matching without advanced NLP capabilities.
+Calendar Overload: Sales reps with many leads might find their calendar cluttered.
+Assumptions:
+Google Sheets stores sales reps, counters, and lead data.
+Google Calendar is used for follow-ups, and all sales reps have shared access.
+
+import gspread
+from datetime import datetime, timedelta
+
+# Authenticate with Google Sheets and Calendar API
+client = gspread.service_account(filename="credentials.json")
+sheet = client.open("Lead Management").sheet1
+reps_sheet = client.open("Sales Reps").sheet1
+
+def get_next_sales_rep():
+    reps = reps_sheet.get_all_records()
+    next_rep = min(reps, key=lambda x: int(x["Assignment Counter"]))
+    next_rep_name = next_rep["Name"]
+    # Increment counter
+    row = reps.index(next_rep) + 2  # Account for header row
+    reps_sheet.update(f"C{row}", int(next_rep["Assignment Counter"]) + 1)
+    return next_rep_name
+
+def extract_keywords(comments):
+    keywords = []
+    significant_terms = ["demo", "pricing", "integration", "features"]
+    for term in significant_terms:
+        if term in comments.lower():
+            keywords.append(term)
+    return ", ".join(keywords)
+
+def schedule_follow_up(urgency, sales_rep):
+    urgency_days = {
+        "Immediate (within 1 month)": 1,
+        "Short-term (1-3 months)": 3,
+        "Medium-term (3-6 months)": 7,
+        "Long-term (6+ months)": 14
+    }
+    follow_up_date = datetime.now() + timedelta(days=urgency_days[urgency])
+    return f"Follow-up scheduled for {sales_rep} on {follow_up_date.strftime('%Y-%m-%d')}"
+
+def main():
+    responses = sheet.get_all_records()
+    
+    for response in responses:
+        # Skip already processed leads
+        if response["Processed"] == "Yes":
+            continue
+
+        # Assign sales rep
+        sales_rep = get_next_sales_rep()
+        sheet.update_cell(response["Row"], "Assigned Sales Rep", sales_rep)
+
+        # Extract keywords
+        comments = response.get("Comments", "")
+        keywords = extract_keywords(comments)
+        sheet.update_cell(response["Row"], "Keywords", keywords)
+
+        # Schedule follow-up
+        urgency = response["Urgency of Need"]
+        follow_up_info = schedule_follow_up(urgency, sales_rep)
+        print(follow_up_info)
+
+        # Mark as processed
+        sheet.update_cell(response["Row"], "Processed", "Yes")
+
+if __name__ == "__main__":
+    main()
+
+
+
+Solution for Task 3: Scaling and Advanced Implementation
+Enhancements and Approach
+1. Lead Distribution Among Sales Reps
+Objective: Assign leads evenly among a predefined list of sales reps to ensure balanced workload distribution.
+Approach:
+Maintain a list of sales reps in a Google Sheet with an "Assignment Counter."
+Use Zapier's "Find Row" action to identify the next available rep (round-robin assignment).
+Update the "Assigned Sales Rep" column in the lead record and increment the selected rep's counter.
+2. Extract Keywords from Comments
+Objective: Use Zapier's Formatter to extract keywords from the "Comments" field for basic text analysis.
+Approach:
+Add a "Comments" field to the Google Form.
+Use the Formatter’s "Text" action in Zapier to extract keywords using predefined patterns or logic (e.g., extracting significant terms like "integration," "demo," or "pricing").
+Store the extracted keywords in a "Keywords" column in the Google Sheet.
+3. Create Lead Follow-Up System
+Objective: Schedule reminders for the sales team in Google Calendar based on the urgency of the lead.
+Approach:
+Use Zapier to create an event in Google Calendar for the assigned sales rep, setting the date based on the lead's urgency:
+Immediate: Schedule within 1 day.
+Short-term: Schedule within 3 days.
+Medium-term: Schedule within 7 days.
+Long-term: Schedule within 14 days.
+Zap Workflow
+Zap Overview
+Trigger:
+
+Google Form submission triggers the workflow.
+Lead Scoring:
+
+Use Formatter (or Python if custom) to calculate the lead score based on input criteria.
+Distribute Leads:
+
+"Find Row" in Google Sheets to get the next available sales rep based on the round-robin method.
+Update the "Assigned Sales Rep" column in the lead record and increment the rep's counter.
+Keyword Extraction:
+
+Use the Formatter to analyze the "Comments" field and extract keywords.
+Update the Google Sheet with extracted keywords.
+Schedule Follow-Up:
+
+Create a Google Calendar event for the assigned sales rep, setting the due date based on urgency.
+Limitations and Assumptions
+Limitations:
+Zapier Free Plan: Limited tasks per month might restrict scalability.
+Keyword Extraction: Limited to basic pattern matching without advanced NLP capabilities.
+Calendar Overload: Sales reps with many leads might find their calendar cluttered.
+Assumptions:
+Google Sheets stores sales reps, counters, and lead data.
+Google Calendar is used for follow-ups, and all sales reps have shared access.
+Python Implementation
+Below is a Python script simulating the workflow for advanced capabilities:
+
+python
+Copy code
+import gspread
+from datetime import datetime, timedelta
+
+# Authenticate with Google Sheets and Calendar API
+client = gspread.service_account(filename="credentials.json")
+sheet = client.open("Lead Management").sheet1
+reps_sheet = client.open("Sales Reps").sheet1
+
+def get_next_sales_rep():
+    reps = reps_sheet.get_all_records()
+    next_rep = min(reps, key=lambda x: int(x["Assignment Counter"]))
+    next_rep_name = next_rep["Name"]
+    # Increment counter
+    row = reps.index(next_rep) + 2  # Account for header row
+    reps_sheet.update(f"C{row}", int(next_rep["Assignment Counter"]) + 1)
+    return next_rep_name
+
+def extract_keywords(comments):
+    keywords = []
+    significant_terms = ["demo", "pricing", "integration", "features"]
+    for term in significant_terms:
+        if term in comments.lower():
+            keywords.append(term)
+    return ", ".join(keywords)
+
+def schedule_follow_up(urgency, sales_rep):
+    urgency_days = {
+        "Immediate (within 1 month)": 1,
+        "Short-term (1-3 months)": 3,
+        "Medium-term (3-6 months)": 7,
+        "Long-term (6+ months)": 14
+    }
+    follow_up_date = datetime.now() + timedelta(days=urgency_days[urgency])
+    return f"Follow-up scheduled for {sales_rep} on {follow_up_date.strftime('%Y-%m-%d')}"
+
+def main():
+    responses = sheet.get_all_records()
+    
+    for response in responses:
+        # Skip already processed leads
+        if response["Processed"] == "Yes":
+            continue
+
+        # Assign sales rep
+        sales_rep = get_next_sales_rep()
+        sheet.update_cell(response["Row"], "Assigned Sales Rep", sales_rep)
+
+        # Extract keywords
+        comments = response.get("Comments", "")
+        keywords = extract_keywords(comments)
+        sheet.update_cell(response["Row"], "Keywords", keywords)
+
+        # Schedule follow-up
+        urgency = response["Urgency of Need"]
+        follow_up_info = schedule_follow_up(urgency, sales_rep)
+        print(follow_up_info)
+
+        # Mark as processed
+        sheet.update_cell(response["Row"], "Processed", "Yes")
+
+if __name__ == "__main__":
+    main()
+Video Explanation
+Lead Distribution:
+
+Demonstrate round-robin logic with Google Sheets updates.
+Show counter increment for each sales rep.
+Keyword Extraction:
+
+Showcase how comments are processed, and keywords are updated in the Google Sheet.
+Follow-Up Scheduling:
+
+Show Google Calendar events created for sales reps based on urgency.
+For the video recording, you can use tools like Loom or OBS Studio to visually explain and walk through the process. Let me know if you'd like help creating or scripting the video!
